@@ -1,0 +1,124 @@
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, mean_squared_error
+
+
+# Read the CSV files
+df = pd.read_csv('train.csv')
+test_data = pd.read_csv('test.csv')
+
+def feature_enginerring(data):
+    # filling Misiing Values
+
+    # HomePlanet
+    data["HomePlanet"] = data["HomePlanet"].fillna("Missing")
+    data["HomePlanet"] = data["HomePlanet"].map({'Missing': -1, 'Earth': 0, 'Europa': 1, 'Mars': 2})
+
+    # CryoSleep
+    data["CryoSleep"] = data["CryoSleep"].fillna("Missing")
+    data["CryoSleep"] = data["CryoSleep"].map({False: 0, True: 1, "Missing": -1})
+
+    # Deck num side
+    data[['Deck', 'Num', 'Side']] = data['Cabin'].str.split('/', expand=True)
+    data = data.drop(columns=["Cabin"])
+    data["Deck"] = df["Deck"].fillna("M")
+    data["Num"] = data["Num"].fillna(-1)
+    data["Side"] = data["Side"].fillna("M")
+    data["Deck"] = data["Deck"].map({'M': -1, 'F': 0, 'G': 1, 'E': 2, 'B': 3, 'C': 4, 'D': 5, 'A': 6,'T': 7})
+    data["Side"] = data["Side"].map({'M': -1, 'S': 0, 'P': 1})
+
+    # Destination
+    data["Destination"] = data["Destination"].fillna("Missing")
+    data["Destination"] = data["Destination"].map({'TRAPPIST-1e': 0, '55 Cancri e': 1, 'PSO J318.5-22': 2, 'Missing': -1})
+
+    # Age
+    data["Age"] = data["Age"].fillna(df["Age"].mean())
+
+    # VIP
+    data["VIP"] = data["VIP"].fillna("Missing")
+    data["VIP"] = data["VIP"].map({False: 0, True: 1, 'Missing': -1})
+
+    # RoomService
+    data["RoomService"] = data["RoomService"].fillna(data["RoomService"].median())
+
+    # FoodCourt
+    data["FoodCourt"] = data["FoodCourt"].fillna(data["FoodCourt"].median())
+
+    # ShoppingMall
+    data["ShoppingMall"] = data["ShoppingMall"].fillna(data["ShoppingMall"].median())
+
+    # Spa
+    data["Spa"] = data["Spa"].fillna(data["Spa"].median())
+
+    # VRDeck
+    data["VRDeck"] = data["VRDeck"].fillna(data["VRDeck"].median())
+
+
+    #Total_Expenses(RoomService, FoodCourt, ShoppingMall, Spa, VRDeck)
+    data["Total_Expenses"] = data[["RoomService", "FoodCourt", "ShoppingMall", "Spa", "VRDeck"]].sum(axis=1)
+
+    # dropping Unnecassary Columns
+    data = data.drop(columns=["PassengerId","Name"])
+
+    return data
+
+# Training Data
+X = feature_enginerring(df)
+Y = X["Transported"]
+Y = Y.astype(int)
+X = X.drop(columns=["Transported"])
+
+# Test data
+X_test = feature_enginerring(test_data)
+
+# Splitting the data
+X_train, X_CV, Y_train, Y_CV = train_test_split(X, Y, train_size=0.85, random_state=42)
+
+# Polynomial Features
+poly_features = PolynomialFeatures(degree=2, include_bias=False)
+X_train_poly = poly_features.fit_transform(X_train)
+
+# Standard Scaler aka Z-Score Normalization
+scaler = StandardScaler()
+X_train_poly_scaled = scaler.fit_transform(X_train_poly)
+
+# Logistic Regression Model
+logistic_model = LogisticRegression(penalty='l2', C=0.02,  max_iter=1000)
+# Train the model
+logistic_model.fit(X_train_poly_scaled, Y_train)
+
+# Predictions on Training Data
+y_train_pred = logistic_model.predict(X_train_poly_scaled)
+
+# Print Training Accuracy
+train_accuracy = accuracy_score(Y_train, y_train_pred)
+print(f"Training Accuracy: {train_accuracy:.2f}")
+
+# Transform and Scale Cross-Validation Data
+X_cv_poly = poly_features.transform(X_CV)
+X_cv_poly_scaled = scaler.transform(X_cv_poly)
+
+# Predictions on Cross-Validation Data
+y_cv_pred = logistic_model.predict(X_cv_poly_scaled)
+
+# Print Cross-Validation Accuracy
+cv_accuracy = accuracy_score(Y_CV, y_cv_pred)
+print(f"Cross-validation Accuracy: {cv_accuracy:.2f}")
+
+#####################################
+#  Testing actual test data
+X_test_poly = poly_features.transform(X_test)
+X_test_poly_scaled = scaler.transform(X_test_poly)
+X_test_prediction = logistic_model.predict(X_test_poly_scaled)
+X_test_prediction_bool = X_test_prediction.astype(bool)
+
+rults = pd.DataFrame({
+    'PassengerId': test_data['PassengerId'],
+    'Transported': X_test_prediction_bool
+})
+
+# 4. Save the DataFrame to a CSV file
+results.to_csv('test_predictions.csv', index=False)
