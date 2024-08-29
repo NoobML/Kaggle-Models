@@ -1,0 +1,233 @@
+import pandas as pd
+from xgboost import XGBRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import r2_score
+import os
+
+df = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', None)
+pd.set_option('display.max_colwidth', None)
+
+
+def filling_missing_values(df):
+
+    df['ExterCond'] = df['ExterCond'].fillna(df['ExterCond'].mode()[0])
+    df['HeatingQC'] = df['HeatingQC'].fillna(df['HeatingQC'].mode()[0])
+    df['Electrical'] = df['Electrical'].fillna(df['Electrical'].mode()[0])
+
+    df['LotFrontage'] = df['LotFrontage'].fillna(df['LotFrontage'].median())
+
+    # Alley (1369) - Categorical Feature too many missing values, dropping the column or maybe filling it with 'missing' value
+    df['Alley'] = df['Alley'].fillna('Missing')
+
+    # MasVnrType(872) - Categorical Feature
+    df['MasVnrType'] = df['MasVnrType'].fillna('Missing')
+
+    df['MasVnrArea'] = df['MasVnrArea'].fillna(df['MasVnrArea'].median())
+
+    df['BsmtQual'] = df['BsmtQual'].fillna(df['BsmtQual'].mode()[0])
+    df['BsmtQual'] = df['BsmtQual'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    df['BsmtCond'] = df['BsmtCond'].fillna(df['BsmtCond'].mode()[0])
+    df['BsmtCond'] = df['BsmtCond'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    df['BsmtExposure'] = df['BsmtExposure'].fillna(df['BsmtExposure'].mode()[0])
+    df['BsmtExposure'] = df['BsmtExposure'].map({'Gd': 4, 'Av': 3, 'Mn': 2, 'No': 1, 'NA': 0})
+
+    df['BsmtFinType1'] = df['BsmtFinType1'].fillna(df['BsmtFinType1'].mode()[0])
+    df['BsmtFinType1'] = df['BsmtFinType1'].map({'GLQ': 6, 'ALQ': 5, 'BLQ': 4, 'Rec': 3, 'LwQ': 2, 'Unf': 1, 'NA': 0})
+
+    df['BsmtFinType2'] = df['BsmtFinType2'].fillna(df['BsmtFinType2'].mode()[0])
+    df['BsmtFinType2'] = df['BsmtFinType2'].map({'GLQ': 6, 'ALQ': 5, 'BLQ': 4, 'Rec': 3, 'LwQ': 2, 'Unf': 1, 'NA': 0})
+
+    df['FireplaceQu'] = df['FireplaceQu'].fillna(df['FireplaceQu'].mode()[0])
+    df['FireplaceQu'] = df['FireplaceQu'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    df['GarageType'] = df['GarageType'].fillna(df['GarageType'].mode()[0])
+
+    df['GarageYrBlt'] = df['GarageYrBlt'].fillna(df['GarageYrBlt'].mean())
+
+    df['GarageFinish'] = df['GarageFinish'].fillna(df['GarageFinish'].mode()[0])
+    df['GarageFinish'] = df['GarageFinish'].map({'Fin': 3, 'RFn': 2, 'Unf': 1, 'NA': 0})
+
+    df['GarageQual'] = df['GarageQual'].fillna(df['GarageQual'].mode()[0])
+    df['GarageQual'] = df['GarageQual'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    df['GarageCond'] = df['GarageCond'].fillna(df['GarageCond'].mode()[0])
+    df['GarageCond'] = df['GarageCond'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    ######    PoolQC Too many missing values 1453 out of 1460
+    df['PoolQC'] = df['PoolQC'].fillna('NA')
+    df['PoolQC'] = df['PoolQC'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    df['Fence'] = df['Fence'].fillna(df['Fence'].mode()[0])
+    df['Fence'] = df['Fence'].map({'GdPrv': 4, 'MnPrv': 3, 'GdWo': 2, 'MnWw': 1, 'NA': 0})
+
+    # MiscFeature - 1406 missing values
+    df['MiscFeature'] = df['MiscFeature'].fillna(df['MiscFeature'].mode()[0])
+    df['MiscFeature'] = df['MiscFeature'].map({'Elev': 5, 'Gar2': 4, 'Othr': 3, 'Shed': 2, 'TenC': 1, 'NA': 0})
+
+    return df
+
+
+
+def test_missing_values(X_test):
+    X_test['MSZoning'] = X_test['MSZoning'].fillna(X_test['MSZoning'].mode()[0])
+    X_test['LotFrontage'] = X_test['LotFrontage'].fillna(X_test['LotFrontage'].median())
+    X_test['Utilities'] = X_test['Utilities'].fillna(X_test['Utilities'].mode()[0])
+    X_test['Exterior1st'] = X_test['Exterior1st'].fillna(X_test['Exterior1st'].mode()[0])
+    X_test['Exterior2nd'] = X_test['Exterior2nd'].fillna(X_test['Exterior2nd'].mode()[0])
+    X_test['MasVnrType'] = X_test['MasVnrType'].fillna('Missing')
+    X_test['MasVnrArea'] = X_test['MasVnrArea'].fillna(X_test['MasVnrArea'].median())
+
+    X_test['BsmtQual'] = X_test['BsmtQual'].fillna(X_test['BsmtQual'].mode()[0])
+    X_test['BsmtQual'] = X_test['BsmtQual'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    X_test['BsmtCond'] = X_test['BsmtCond'].fillna(X_test['BsmtCond'].mode()[0])
+    X_test['BsmtCond'] = X_test['BsmtCond'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    X_test['BsmtExposure'] = X_test['BsmtExposure'].fillna(X_test['BsmtExposure'].mode()[0])
+    X_test['BsmtExposure'] = X_test['BsmtExposure'].map({'Gd': 4, 'Av': 3, 'Mn': 2, 'No': 1, 'NA': 0})
+
+    X_test['BsmtFinType1'] = X_test['BsmtFinType1'].fillna(X_test['BsmtFinType1'].mode()[0])
+    X_test['BsmtFinType1'] = X_test['BsmtFinType1'].map(
+        {'GLQ': 6, 'ALQ': 5, 'BLQ': 4, 'Rec': 3, 'LwQ': 2, 'Unf': 1, 'NA': 0})
+
+    X_test['BsmtFinType2'] = X_test['BsmtFinType2'].fillna(df['BsmtFinType2'].mode()[0])
+    X_test['BsmtFinType2'] = X_test['BsmtFinType2'].map(
+        {'GLQ': 6, 'ALQ': 5, 'BLQ': 4, 'Rec': 3, 'LwQ': 2, 'Unf': 1, 'NA': 0})
+
+    X_test['BsmtFinSF1'] = X_test['BsmtFinSF1'].fillna(X_test['BsmtFinSF1'].mode()[0])
+    X_test['BsmtFinSF2'] = X_test['BsmtFinSF2'].fillna(X_test['BsmtFinSF2'].mode()[0])
+    X_test['BsmtUnfSF'] = X_test['BsmtUnfSF'].fillna(X_test['BsmtUnfSF'].mode()[0])
+    X_test['TotalBsmtSF'] = X_test['TotalBsmtSF'].fillna(X_test['TotalBsmtSF'].mode()[0])
+
+    X_test['BsmtFullBath'] = X_test['BsmtFullBath'].fillna(X_test['BsmtFullBath'].mode()[0])
+    X_test['BsmtHalfBath'] = X_test['BsmtHalfBath'].fillna(X_test['BsmtHalfBath'].mode()[0])
+
+    X_test['KitchenQual'] = X_test['KitchenQual'].fillna(X_test['KitchenQual'].mode()[0])
+    X_test['KitchenQual'] = X_test['KitchenQual'].map(
+        {'GLQ': 6, 'ALQ': 5, 'BLQ': 4, 'Rec': 3, 'LwQ': 2, 'Unf': 1, 'NA': 0})
+
+    X_test['Functional'] = X_test['Functional'].fillna(X_test['Functional'].mode()[0])
+
+    X_test['FireplaceQu'] = X_test['FireplaceQu'].fillna(X_test['FireplaceQu'].mode()[0])
+    X_test['FireplaceQu'] = X_test['FireplaceQu'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    X_test['GarageType'] = X_test['GarageType'].fillna(X_test['GarageType'].mode()[0])
+
+    X_test['GarageYrBlt'] = X_test['GarageYrBlt'].fillna(X_test['GarageYrBlt'].mean())
+
+    X_test['GarageFinish'] = X_test['GarageFinish'].fillna(X_test['GarageFinish'].mode()[0])
+    X_test['GarageFinish'] = X_test['GarageFinish'].map({'Fin': 3, 'RFn': 2, 'Unf': 1, 'NA': 0})
+
+    X_test['GarageCars'] = X_test['GarageCars'].fillna(X_test['GarageCars'].mode()[0])
+    X_test['GarageArea'] = X_test['GarageArea'].fillna(X_test['GarageArea'].mode()[0])
+
+    X_test['GarageQual'] = X_test['GarageQual'].fillna(X_test['GarageQual'].mode()[0])
+    X_test['GarageQual'] = X_test['GarageQual'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    X_test['GarageCond'] = X_test['GarageCond'].fillna(X_test['GarageCond'].mode()[0])
+    X_test['GarageCond'] = X_test['GarageCond'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+
+    X_test['Fence'] = X_test['Fence'].fillna(X_test['Fence'].mode()[0])
+    X_test['Fence'] = X_test['Fence'].map({'GdPrv': 4, 'MnPrv': 3, 'GdWo': 2, 'MnWw': 1, 'NA': 0})
+
+    X_test['SaleType'] = X_test['SaleType'].fillna(X_test['SaleType'].mode()[0])
+
+    X_test['PoolQC'] = X_test['PoolQC'].fillna('NA')
+    X_test['PoolQC'] = X_test['PoolQC'].map({'Ex': 5, 'Gd': 4, 'TA': 3, 'Fa': 2, 'Po': 1, 'NA': 0})
+    X_test['MiscFeature'] = X_test['MiscFeature'].fillna(X_test['MiscFeature'].mode()[0])
+    X_test['MiscFeature'] = X_test['MiscFeature'].map({'Elev': 5, 'Gar2': 4, 'Othr': 3, 'Shed': 2, 'TenC': 1, 'NA': 0})
+    X_test['Alley'] = X_test['Alley'].fillna('Missing')
+
+    return X_test
+
+def Ordinal_data(df):
+    df['LotShape'] = df['LotShape'].map({'Reg': 3, 'IR1': 2, 'IR2': 1, 'IR3': 0})
+    df['LandContour'] = df['LandContour'].map({'Lvl': 3, 'Bnk': 2, 'HLS': 1, 'Low': 0})
+    df['LandSlope'] = df['LandSlope'].map({'Gtl': 2, 'Mod': 1, 'Sev': 0})
+    df['ExterQual'] = df['ExterQual'].map({'Ex': 4, 'Gd': 3, 'TA': 2, 'Fa': 1, 'Po': 0})
+    df['ExterCond'] = df['ExterCond'].map({'Ex': 4, 'Gd': 3, 'TA': 2, 'Fa': 1, 'Po': 0})
+    df['HeatingQC'] = df['HeatingQC'].map({'Ex': 4, 'Gd': 3, 'TA': 2, 'Fa': 1, 'Po': 0})
+    df['KitchenQual'] = df['KitchenQual'].map({'Ex': 4, 'Gd': 3, 'TA': 2, 'Fa': 1, 'Po': 0})
+
+    return df
+
+df = filling_missing_values(df)
+df = Ordinal_data(df)
+test = test_missing_values(test)
+test = Ordinal_data(test)
+
+y = df['SalePrice']
+X = df.drop(['Id', 'SalePrice'], axis=1)
+X_test = test.drop(['Id'], axis=1)
+
+
+
+categorical_variable = X.select_dtypes(include=['object', 'category']).columns
+numerical_variable = X.select_dtypes(include=['int', 'float']).columns
+
+transformer = ColumnTransformer(transformers=[
+    ('Cat', OneHotEncoder(drop='first', sparse_output=False), categorical_variable),
+    ('Num', StandardScaler(), numerical_variable)
+])
+
+X_transformed = transformer.fit_transform(X)
+X_transformed = pd.DataFrame(X_transformed, columns=transformer.get_feature_names_out())
+X_test_transformed = transformer.transform(X_test)
+X_test_transformed = pd.DataFrame(X_test_transformed, columns=transformer.get_feature_names_out())
+
+
+# splitting data
+X_train, X_CV, Y_train, Y_CV = train_test_split(X_transformed, y, test_size=0.2, random_state=42)
+
+param_grid = {
+    'max_depth': [3],
+    'learning_rate': [0.1],
+    'n_estimators': [300],
+    'subsample': [0.8],
+    'colsample_bytree': [0.8],
+    'reg_lambda': [0.01],
+    'tree_method': ['hist']
+}
+
+num_cores = os.cpu_count()
+
+model = XGBRegressor(objective='reg:squarederror')
+
+grid_search = GridSearchCV(
+    estimator=model,
+    param_grid=param_grid,
+    scoring='neg_mean_squared_error',
+    cv=10,
+    verbose=1,
+    n_jobs=num_cores // 2
+)
+
+
+grid_search.fit(X_train,Y_train)
+
+best_params = grid_search.best_params_
+best_model = grid_search.best_estimator_
+
+print(best_params)
+
+prediction = best_model.predict(X_CV)
+score = r2_score(Y_CV, prediction)
+print(score)
+
+test_predictions = best_model.predict(X_test_transformed)
+
+
+result = pd.DataFrame({
+    'Id': test['Id'],
+    'SalePrice': test_predictions
+})
+result.to_csv('new_prediction.csv', index=False)
