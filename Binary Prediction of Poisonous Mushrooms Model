@@ -1,0 +1,98 @@
+import pandas as pd
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import accuracy_score
+from sklearn.compose import ColumnTransformer
+from xgboost import XGBClassifier
+
+data_frame = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+y = data_frame['class'].apply(lambda x: 0 if x == 'e' else 1)
+df = data_frame.drop(columns=['id', 'class'])
+
+def transformation(data):
+    categorical_columns = data.select_dtypes(include=['object', 'category']).columns
+
+    for col in categorical_columns:
+        value_counts = data[col].value_counts()
+        to_replace = value_counts[value_counts < 5].index
+        data[col] = data[col].replace(to_replace, 'Missing')
+
+    return data
+
+def transform_and_fill_missing_values(df):
+
+    df['cap-diameter'] = df['cap-diameter'].fillna(df['cap-diameter'].median())
+    df['cap-shape'] = df['cap-shape'].fillna('Missing')
+    df['cap-surface'] = df['cap-surface'].fillna('Missing')
+    df['cap-color'] = df['cap-color'].fillna('Missing')
+    df['does-bruise-or-bleed'] = df['does-bruise-or-bleed'].fillna('Missing')
+    df['gill-attachment'] = df['gill-attachment'].fillna('Missing')
+    df['gill-spacing'] = df['gill-spacing'].fillna('Missing')
+    df['gill-color'] = df['gill-color'].fillna('Missing')
+    df['stem-root'] = df['stem-root'].fillna('Missing')
+    df['stem-surface'] = df['stem-surface'].fillna('Missing')
+    df['stem-color'] = df['stem-color'].fillna('Missing')
+    df['veil-type'] = df['veil-type'].fillna('Missing')
+    df['veil-color'] = df['veil-color'].fillna('Missing')
+    df['has-ring'] = df['has-ring'].fillna('Missing')
+    df['ring-type'] = df['ring-type'].fillna('Missing')
+    df['spore-print-color'] = df['spore-print-color'].fillna('Missing')
+    df['habitat'] = df['habitat'].fillna('Missing')
+    df['stem-height'] = df['stem-height'].fillna(df['stem-height'].median())
+
+    return df
+
+df = transformation(df)
+test = transformation(test)
+df = transform_and_fill_missing_values(df)
+test = transform_and_fill_missing_values(test)
+test_data = test.drop(columns=['id'], axis=1)
+
+X_train, X_CV, Y_train, Y_CV = train_test_split(df, y, train_size=0.8, random_state=42)
+
+transformer = ColumnTransformer(transformers=[
+    ('num', StandardScaler(), X_train.select_dtypes(include=['int64', 'float64']).columns),
+    ('cat', OneHotEncoder(handle_unknown='ignore'), X_train.select_dtypes(include=['object', 'category']).columns)
+])
+
+X_train_transformed = transformer.fit_transform(X_train)
+X_CV_transformed = transformer.transform(X_CV)
+X_test_transformed = transformer.transform(test_data)
+
+xgb = XGBClassifier(random_state=42)
+
+param_grid = {
+    'n_estimators': [300],
+    'learning_rate': [0.1],
+    'max_depth': [ 6],
+    'min_child_weight': [5],
+    'gamma': [0.1],
+    'subsample': [0.8],
+    'colsample_bytree': [0.8],
+    'reg_alpha': [0.01],
+    'reg_lambda': [0.01]
+}
+
+grid_search = GridSearchCV(xgb, param_grid, cv=10)
+
+grid_search.fit(X_train_transformed, Y_train)
+
+# Best parameters and accuracy score
+print("Best Parameters:", grid_search.best_params_)
+print("Best Accuracy:", grid_search.best_score_)
+
+y_hat = grid_search.predict(X_CV_transformed)
+
+accuracy = accuracy_score(Y_CV, y_hat)
+print(f'accuracy score: {accuracy}')
+
+test_prediction = grid_search.predict(X_test_transformed)
+test_prediction = pd.Series(test_prediction)  # Ensure it's a Series
+test_prediction = ['e' if pred == 0 else 'p' for pred in test_prediction]
+
+result = pd.DataFrame({
+    'id': test['id'],
+    'class': test_prediction
+})
+result.to_csv('Prediction.csv', index=False)
