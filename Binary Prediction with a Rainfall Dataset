@@ -1,0 +1,120 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
+from sklearn.metrics import roc_auc_score, roc_curve, confusion_matrix
+from sklearn.model_selection import StratifiedKFold
+import optuna
+from sklearn.preprocessing import StandardScaler
+
+
+original = pd.read_csv('Rainfall.csv')
+df = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+
+original.columns = original.columns.str.strip()
+
+original['rainfall'] = original['rainfall'].map({'yes': 1, 'no': 0})
+original['humidity'] = original['humidity'].astype("float64")
+original['cloud'] = original['cloud'].astype("float64")
+
+df = df.drop(columns=['id'])
+test_ids = test['id']
+test = test.drop(columns=['id'])
+train = pd.concat([original, df], ignore_index=True)
+
+
+train['winddirection'] = train['winddirection'].fillna(train['winddirection'].mean())
+train['windspeed'] = train['windspeed'].fillna(train['windspeed'].mean())
+test['winddirection'] = test['winddirection'].fillna(test['winddirection'].mean())
+
+
+
+Y = train['rainfall']
+Y = Y.to_numpy()
+
+train = train.drop(columns=['rainfall'])
+selected_features = ['humidity', 'cloud', 'sunshine', 'windspeed']
+train_limited_feature = train[selected_features]
+test_limited_feature = test[selected_features]
+
+
+
+scaler = StandardScaler()
+train_scaled = scaler.fit_transform(train_limited_feature)
+test_scaled = scaler.transform(test_limited_feature)
+
+
+
+X_train, X_eval, Y_train, Y_eval = train_test_split(train_scaled, Y, train_size=0.9, random_state=42, stratify=Y)
+
+
+# def objective(trial):
+#     params = {
+#         "n_estimators": trial.suggest_int("n_estimators", 500, 1500),
+#         "learning_rate": trial.suggest_float("learning_rate", 0.001, 0.1),
+#         "max_depth": trial.suggest_int("max_depth", 2, 15),
+#         "min_child_weight": trial.suggest_int("min_child_weight", 1, 5),
+#         "gamma": trial.suggest_float("gamma", 3, 10),
+#         "subsample": trial.suggest_float("subsample", 0.7, 1.0),
+#         "colsample_bytree": trial.suggest_float("colsample_bytree", 0.7, 1.0),
+#         "reg_lambda": trial.suggest_float("reg_lambda", 0.1, 5),
+#         "device": "cuda",
+#         "verbosity": 0
+#     }
+#
+#     model = XGBClassifier(**params)
+#     kfold = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+#
+#     training_errors = []
+#     validation_errors = []
+#
+#     for train_idx, test_idx in kfold.split(X_train, Y_train):
+#         x_train, x_dev = X_train[train_idx], X_train[test_idx]
+#         y_train, y_dev = Y_train[train_idx], Y_train[test_idx]
+#
+#         model.fit(x_train, y_train)
+#
+#         # Training error
+#         train_pred = model.predict_proba(x_train)[:, 1]
+#         train_error = roc_auc_score(y_train, train_pred)
+#         training_errors.append(train_error)
+#
+#         # Validation error
+#         pred = model.predict_proba(x_dev)[:, 1]
+#         pred_error = roc_auc_score(y_dev, pred)
+#         validation_errors.append(pred_error)
+#
+#         print(f'Training Error: ', {train_error})
+#         print(f'Validation Error: ', {pred_error})
+#
+#     trial.set_user_attr("training_errors", training_errors)
+#     trial.set_user_attr("validation_errors", validation_errors)
+#
+#     return np.mean(validation_errors)
+#     # Print the overall average AUC
+#     print(f'Average Training AUC: {np.mean(training_errors)}')
+#     print(f'Average Validation AUC: {np.mean(validation_errors)}')
+#
+# study = optuna.create_study(direction="maximize")
+# study.optimize(objective, n_trials=200)
+
+params =  {'n_estimators': 585, 'learning_rate': 0.018303896551857636, 'max_depth': 2, 'min_child_weight': 5, 'gamma': 7.036198664423443,
+'subsample': 0.9006673662002513, 'colsample_bytree': 0.8915185051705744, 'reg_lambda': 0.33332887098627156}
+# params = study.best_params
+
+model = XGBClassifier(**params, random_state=42)
+model.fit(X_train, Y_train)
+pred_probs = model.predict_proba(X_eval)[:, 1]  # Probability for class 1
+error = roc_auc_score(Y_eval, pred_probs)
+print(f'Evaluation error: {error}')
+
+
+test_prediction = model.predict(test_scaled)
+result = pd.DataFrame({
+    'id': test_ids,
+    'rainfall': test_prediction
+})
+result.to_csv('Prediction.csv', index=False)
+print('Submission Done')
